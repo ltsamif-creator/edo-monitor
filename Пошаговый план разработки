@@ -1,0 +1,176 @@
+10. Пошаговый план разработки
+Шаг 1. Инициализация проекта
+Создать структуру папок.
+
+Настроить requirements.txt, Dockerfile, docker-compose.yml.
+
+Создать .env.example с переменными окружения.
+
+Шаг 2. Базовое приложение FastAPI
+app/main.py — точка входа, подключение роутеров.
+
+app/config.py — чтение переменных окружения (токен Диадока, путь к папке, интервалы).
+
+app/database.py — подключение к SQLite, создание таблиц.
+
+Шаг 3. Модели и схемы
+app/models.py — SQLAlchemy-модели для documents, docflow_events, problems.
+
+app/schemas.py — Pydantic-схемы для API.
+
+Шаг 4. Парсер папки 1С
+app/services/document_parser.py — обход data/incoming/, парсинг JSON, сохранение в БД, перемещение файлов в data/processed/.
+
+Шаг 5. Клиент Диадок API
+app/services/diadoc_client.py — методы:
+
+get_docflow_events(after_index_key) — вызов GetDocflowEvents.
+
+get_message(message_id, entity_id) — вызов GetMessage.
+
+can_post_message(...) — вызов CanPostMessage.
+
+Обработка ошибок HTTP, логирование.
+
+Шаг 6. Детектор проблем
+app/services/problem_detector.py — логика из раздела 9.3.
+
+Запускается после каждой синхронизации, записывает проблемы в БД.
+
+Шаг 7. Планировщик
+app/scheduler.py — APScheduler с задачами:
+
+парсинг папки (каждые 5 мин);
+
+синхронизация с Диадоком (каждые 10 мин);
+
+запуск детектора проблем (после синхронизации).
+
+Шаг 8. REST API
+app/api/endpoints.py — эндпоинты из раздела 9.4.
+
+Подключение в main.py.
+
+Шаг 9. Тестирование
+Юнит-тесты для парсера, детектора, клиента Диадока (мокая HTTP).
+
+Интеграционный тест с тестовым ящиком Диадока (sandbox).
+
+Шаг 10. Развёртывание
+docker-compose up --build
+
+Проверка работы через http://localhost:8000/docs.
+
+11. Переменные окружения (.env.example)
+env
+DIADOC_API_URL=https://diadoc-api.kontur.ru
+DIADOC_TOKEN=your_token_here
+DIADOC_BOX_ID=your_box_id_here
+INCOMING_DIR=./data/incoming
+PROCESSED_DIR=./data/processed
+PARSE_INTERVAL_MINUTES=5
+SYNC_INTERVAL_MINUTES=10
+DB_PATH=./edo_monitor.db
+12. Docker Compose
+yaml
+version: '3.8'
+services:
+  edo-monitor:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./edo_monitor.db:/app/edo_monitor.db
+    env_file:
+      - .env
+    restart: unless-stopped
+13. Dockerfile
+dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app/ ./app/
+COPY data/ ./data/
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+14. requirements.txt
+text
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+apscheduler==3.10.4
+httpx==0.25.1
+pydantic==2.5.2
+python-dotenv==1.0.0
+15. Что нужно уточнить у заказчика
+Точный формат JSON-файлов, которые выгружает 1С.
+
+Как именно в Диадоке отражается статус «не прошёл ГИС МТ» (какой event_type или status).
+
+Нужна ли авторизация для доступа к API микросервиса (сейчас предполагается открытый доступ в локальной сети).
+
+text
+
+---
+
+## 📄 `.env.example`
+
+```env
+DIADOC_API_URL=https://diadoc-api.kontur.ru
+DIADOC_TOKEN=your_token_here
+DIADOC_BOX_ID=your_box_id_here
+INCOMING_DIR=./data/incoming
+PROCESSED_DIR=./data/processed
+PARSE_INTERVAL_MINUTES=5
+SYNC_INTERVAL_MINUTES=10
+DB_PATH=./edo_monitor.db
+📄 docker-compose.yml
+yaml
+version: '3.8'
+services:
+  edo-monitor:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./edo_monitor.db:/app/edo_monitor.db
+    env_file:
+      - .env
+    restart: unless-stopped
+📄 Dockerfile
+dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app/ ./app/
+COPY data/ ./data/
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+📄 requirements.txt
+text
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+apscheduler==3.10.4
+httpx==0.25.1
+pydantic==2.5.2
+python-dotenv==1.0.0
+📄 .gitignore
+text
+__pycache__/
+*.pyc
+.env
+*.db
+data/processed/
+.venv/
+venv/
